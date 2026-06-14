@@ -1,0 +1,103 @@
+Codes used in the assessment
+app.py 
+from flask import Flask, request, jsonify.
+import boto3.
+import os
+import glob
+import shutil
+import traceback
+from detect import run
+
+app = Flask(__name__)
+s3 = boto3.client('s3')
+
+@app.route('/')
+def home():
+    return "YOLOv5 detection server is running"
+
+@app.route('/detect', methods=['POST'])
+def detect_objects():
+    try:
+        data = request.get_json()
+        bucket = data['bucket']
+        key = data['key']
+
+        filename = os.path.basename(key)
+        name_no_ext = os.path.splitext(filename)[0]
+
+        local_input = f'/tmp/{filename}'
+        output_dir = 'runs/detect/exp'
+        result_label_path = f'{output_dir}/labels/{name_no_ext}.txt'
+
+        if os.path.exists('runs/detect'):
+            shutil.rmtree('runs/detect')
+Main lambda final code
+import json
+import urllib3
+
+http = urllib3.PoolManager()
+
+EC2_DETECT_URL = 'http://44.200.114.250:5000/detect'
+
+def lambda_handler(event, context):
+    try:
+        # Check if triggered by S3 or by API Gateway
+        if 'Records' in event:
+            # S3 trigger
+            record = event['Records'][0]['s3']
+            bucket_name = record['bucket']['name']
+            image_key = record['object']['key']
+        else:
+            # API Gateway trigger
+            body = event.get('body')
+            if isinstance(body, str):
+                body = json.loads(body) 
+            bucket_name = body['bucket']
+            image_key = body['key']  
+
+        print(f"Processing: s3://{bucket_name}/{image_key}")
+
+        response = http.request(
+            'POST',
+            EC2_DETECT_URL,
+            headers={'Content-Type': 'application/json'},
+            body=json.dumps({'bucket': bucket_name, 'key': image_key}),
+            timeout=urllib3.Timeout(connect=10, read=110)
+        )
+
+        result_data = json.loads(response.data.decode('utf-8')) 
+        print(f"Detection result: {result_data}")
+
+        return {
+            'statusCode': 200,
+            'headers': {'Content-Type': 'application/json'},
+            'body': json.dumps(result_data)
+        }
+
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        return {
+            'statusCode': 500,
+            'headers': {'Content-Type': 'application/json'},
+            'body': json.dumps({'error': str(e)})
+        }
+
+PowerShell code used 
+$body = @{
+    bucket = "yolov5objectdetection"
+    key = "input/vegetable.jpg"
+} | ConvertTo-Json
+
+Invoke-RestMethod -Uri "https://d8ma6ido0c.execute-api.us-east-1.amazonaws.com/prod/detect" -Method POST -ContentType "application/json" -Body $body
+
+Code used to check the Independencies
+python3 -c "import torch; print('torch OK')"
+python3 -c "import torchvision; print('torchvision OK')"
+python3 -c "import boto3; print('boto3 OK')"
+python3 -c "import cv2; print('opencv OK')"
+python3 -c "import numpy; print('numpy OK')"
+
+other codes used to install dependencies are as usual such as git clone https://github.com/ultralytics/yolov5
+cd yolov5
+pip install -r requirements.txt
+also mentioned in the assignment  
